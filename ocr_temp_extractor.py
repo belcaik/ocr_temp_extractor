@@ -55,19 +55,81 @@ class ROISelector:
         self.points: List[Tuple[int, int]] = []
         self.done = False
         self.cancelled = False
+        # selection modes
+        self.mode = 'poly'  # 'poly' or 'rect'
+        self.dragging = False
+        self.drag_start: Optional[Tuple[int, int]] = None
+        self.drag_current: Optional[Tuple[int, int]] = None
+        # cache of current display scale to map mouse -> image coords
+        self._last_disp_size: Optional[Tuple[int, int]] = None
+
+    def _map_mouse_to_image(self, x: int, y: int) -> Tuple[int, int]:
+        # Map mouse coordinates (possibly on a resized window) back to image coordinates
+        disp_w, disp_h = None, None
+        try:
+            if hasattr(cv2, 'getWindowImageRect'):
+                _, _, disp_w, disp_h = cv2.getWindowImageRect(self.window)
+        except Exception:
+            disp_w, disp_h = None, None
+        if disp_w is None or disp_h is None or disp_w <= 0 or disp_h <= 0:
+            sx = sy = 1.0
+        else:
+            self._last_disp_size = (disp_w, disp_h)
+            sx = float(self.w) / float(disp_w)
+            sy = float(self.h) / float(disp_h)
+        xi = int(round(x * sx))
+        yi = int(round(y * sy))
+        xi = max(0, min(self.w - 1, xi))
+        yi = max(0, min(self.h - 1, yi))
+        return xi, yi
 
     def _on_mouse(self, event, x, y, flags, param):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            self.points.append((x, y))
+        if self.mode == 'poly':
+            if event == cv2.EVENT_LBUTTONDOWN:
+                xi, yi = self._map_mouse_to_image(x, y)
+                self.points.append((xi, yi))
+        else:
+            # Rectangle mode: two left-clicks (no drag) to avoid Qt pan
+            if event == cv2.EVENT_LBUTTONDOWN:
+                xi, yi = self._map_mouse_to_image(x, y)
+                if not self.dragging:
+                    # First click starts preview
+                    self.dragging = True
+                    self.drag_start = (xi, yi)
+                    self.drag_current = (xi, yi)
+                else:
+                    # Second click finalizes rectangle
+                    self.drag_current = (xi, yi)
+                    if self.drag_start is not None and self.drag_current is not None:
+                        x0, y0 = self.drag_start
+                        x1, y1 = self.drag_current
+                        p0 = (x0, y0)
+                        p1 = (x1, y0)
+                        p2 = (x1, y1)
+                        p3 = (x0, y1)
+                        self.points = [p0, p1, p2, p3]
+                    self.dragging = False
+            elif event == cv2.EVENT_MOUSEMOVE and self.dragging:
+                xi, yi = self._map_mouse_to_image(x, y)
+                self.drag_current = (xi, yi)
 
     def _draw(self, img: np.ndarray) -> np.ndarray:
         overlay = img.copy()
         # Draw live polyline
-        if len(self.points) > 0:
-            for i in range(1, len(self.points)):
-                cv2.line(overlay, self.points[i - 1], self.points[i], (0, 255, 255), 2, cv2.LINE_AA)
-            # last point marker
-            cv2.circle(overlay, self.points[-1], 3, (0, 255, 255), -1, cv2.LINE_AA)
+        if self.mode == 'poly':
+            if len(self.points) > 0:
+                for i in range(1, len(self.points)):
+                    cv2.line(overlay, self.points[i - 1], self.points[i], (0, 255, 255), 2, cv2.LINE_AA)
+                # last point marker
+                cv2.circle(overlay, self.points[-1], 3, (0, 255, 255), -1, cv2.LINE_AA)
+        else:
+            if self.dragging and self.drag_start and self.drag_current:
+                x0, y0 = self.drag_start
+                x1, y1 = self.drag_current
+                cv2.rectangle(overlay, (x0, y0), (x1, y1), (0, 255, 255), 2, cv2.LINE_AA)
+            elif len(self.points) == 4:
+                pts = np.array(self.points, dtype=np.int32)
+                cv2.polylines(overlay, [pts], isClosed=True, color=(0, 255, 255), thickness=2, lineType=cv2.LINE_AA)
         # Fill polygon if >=3
         if len(self.points) >= 3:
             pts = np.array(self.points, dtype=np.int32)
@@ -76,11 +138,20 @@ class ROISelector:
             overlay = cv2.addWeighted(overlay, 0.4, img, 0.6, 0)
 
         # Instructions box
-        instructions = [
-            "Left-click: add point",
-            "Backspace/u: undo, r: reset",
-            "Enter: confirm polygon",
-        ]
+        if self.mode == 'poly':
+            instructions = [
+                "Mode: Polygon (b: rectangle, p: polygon)",
+                "Left-click: add point",
+                "Backspace/u: undo, r: reset",
+                "Enter: confirm",
+            ]
+        else:
+            instructions = [
+                "Mode: Rectangle (click corner, move, click opposite)",
+                "b: rectangle, p: polygon",
+                "Backspace/u: undo, r: reset",
+                "Enter: confirm",
+            ]
         y0 = 20
         for line in instructions:
             cv2.putText(
@@ -122,6 +193,21 @@ class ROISelector:
                     self.points.pop()
             elif key == ord('r') or key == ord('R'):
                 self.points.clear()
+                self.dragging = False
+                self.drag_start = None
+                self.drag_current = None
+            elif key == ord('b') or key == ord('B'):
+                self.mode = 'rect'
+                self.points.clear()
+                self.dragging = False
+                self.drag_start = None
+                self.drag_current = None
+            elif key == ord('p') or key == ord('P'):
+                self.mode = 'poly'
+                self.points.clear()
+                self.dragging = False
+                self.drag_start = None
+                self.drag_current = None
 
         cv2.destroyWindow(self.window)
 
@@ -407,6 +493,7 @@ def process_video(
     bilateral: bool = False,
     adaptive: bool = False,
     deskew_sweep: bool = False,
+    rotate_deg: float = 0.0,
 ) -> None:
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
@@ -442,6 +529,10 @@ def process_video(
         if not ok:
             # likely end of video
             break
+
+        # Apply global rotation before ROI if requested, to match selection space
+        if rotate_deg and abs(rotate_deg) > 0.1:
+            frame = rotate_bound(frame, rotate_deg)
 
         h, w = frame.shape[:2]
         poly_pts = reconstruct_polygon(norm_poly, w, h)
@@ -615,7 +706,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         cap.release()
         return 4
 
-    print("[info] Select polygon ROI on the first frame and press Enter.", file=sys.stderr)
+    # Apply rotation to first frame for selection if requested
+    if abs(args.rotate) > 0.1:
+        first = rotate_bound(first, args.rotate)
+
+    print("[info] Select ROI (polygon or rectangle). Press Enter to confirm.", file=sys.stderr)
     selector = ROISelector(first)
     norm_poly = selector.select()
     if norm_poly is None:

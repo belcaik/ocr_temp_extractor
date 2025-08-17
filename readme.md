@@ -63,8 +63,8 @@ python ocr_temp_extractor.py --input in.avi --interval 0.5 --output /tmp/out.csv
 python ocr_temp_extractor.py -i in.mp4 -t 1 -o out.csv --assist
 
 # Handling tilted screens / tricky lighting
-# - Try a larger scale, adaptive thresholding and deskew sweep
-python ocr_temp_extractor.py -i in.mp4 -t 1 -o out.csv --scale 2.5 --adaptive --deskew-sweep
+# - Rotate ROI, try larger scale, adaptive thresholding and deskew sweep
+python ocr_temp_extractor.py -i in.mp4 -t 1 -o out.csv --rotate 5 --scale 2.5 --adaptive --deskew-sweep
 
 # Edge-preserving denoise (slower but can help 7-seg)
 python ocr_temp_extractor.py -i in.mp4 -t 1 -o out.csv --bilateral
@@ -78,11 +78,12 @@ python ocr_temp_extractor.py -i in.mp4 -t 1 -o out.csv --model tesseract --lang 
 
 ### ROI Selection Controls
 On launching, a window shows the first frame for selecting the temperature display area:
-- Left-click: add points
-- Backspace or `u`: remove last point
-- `r`: reset all points
-- Enter: confirm; closes polygon (auto-connects last → first)
-- The current polygon is rendered with anti-aliased lines and a semi-transparent fill.
+- Modes:
+  - Polygon: left-click to add points; `p` to switch to polygon
+  - Rectangle: press `b` to switch, then left-click once to set the first corner, move the mouse, and left-click again to set the opposite corner (no dragging, avoids Qt panning).
+- Common keys: Backspace/`u` undo, `r` reset, Enter confirm (auto-closes polygon)
+- The polygon/rectangle is rendered with anti-aliased lines and a semi-transparent fill.
+- When `--rotate` is provided, the first frame is rotated for selection so ROI aligns with processed frames.
 - Points are stored in normalized coordinates so they scale to any frame size.
 
 ### Output CSV
@@ -118,6 +119,7 @@ Use `--assist` to review each sampled timestamp interactively:
 - `--adaptive`: Use adaptive thresholding (better for uneven illumination) instead of Otsu.
 - `--bilateral`: Use bilateral filter (slower) instead of Gaussian blur; preserves edges.
 - `--deskew-sweep`: Try multiple small angles to refine deskew when the screen is slightly tilted.
+ - `--rotate <deg>`: Rotate the ROI by degrees (CCW) before OCR to compensate video tilt.
 
 ## Notes & Tips
 - The tool seeks by time using `CAP_PROP_POS_MSEC` to avoid drift.
