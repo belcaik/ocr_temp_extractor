@@ -89,15 +89,15 @@ On launching, a window shows the first frame for selecting the temperature displ
 ### Output CSV
 - Header (exact): `Medicion,Tiempo,temperatura`
 - `Medicion`: 1-based index of the measurement
-- `Tiempo`: timestamp in seconds from the start, with three decimals
+- `Tiempo`: timestamp in `HH:MM:SS` from the start (zero‑padded)
 - `temperatura`: parsed float (e.g., 23.500) or empty if OCR fails
 
 Example:
 ```csv
 Medicion,Tiempo,temperatura
-1,0.000,23.500
-2,2.000,23.375
-3,4.000,
+1,00:00:00,23.500
+2,00:00:02,23.375
+3,00:00:04,
 ```
 
 ### Preview Window
@@ -143,3 +143,14 @@ Run from source:
 . .venv/bin/activate
 python ocr_temp_extractor.py -i input.mp4 -t 1.0 -o out.csv --preview
 ```
+
+## Anomaly Detection
+Use the companion script to flag abnormal temperatures and get suggested replacements (linear interpolation or robust local estimate):
+
+```bash
+python detect_anomalies.py -i out.csv -r anomalies.csv -c corrected.csv
+```
+
+- `-r/--report`: Writes a CSV listing each anomalous or missing point with the reason and suggested value.
+- `-c/--corrected`: Writes a corrected copy of the input CSV with suggested values filled in for anomalies/missing entries.
+- Tuning: `--window` (default 5), `--k-mad` (default 3.5), `--k-rate` (default 5.0).

@@ -26,6 +26,15 @@ except Exception:
 _ocr_cache: Dict[str, "PaddleOCR"] = {}
 
 
+def format_hhmmss(seconds: float) -> str:
+    # Round to nearest second to avoid float drift (e.g., 1.999 -> 2)
+    total = int(round(max(0.0, float(seconds))))
+    h = total // 3600
+    m = (total % 3600) // 60
+    s = total % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
 def get_paddle_ocr(lang: str = "en") -> "PaddleOCR":
     if PaddleOCR is None:
         raise RuntimeError("PaddleOCR not available. Install with: pip install paddlepaddle paddleocr")
@@ -619,7 +628,7 @@ def process_video(
 
         rows.append({
             'Medicion': measurement_idx,
-            'Tiempo': f"{t:.3f}",
+            'Tiempo': format_hhmmss(t),
             'temperatura': ("" if temp_val is None else f"{temp_val:.3f}")
         })
 
