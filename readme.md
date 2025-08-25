@@ -1,6 +1,9 @@
 # ocr_temp_extractor
 
 Extract temperature readings from a fixed-lab video by selecting a polygon ROI over the on-screen thermometer and running OCR at a fixed time interval. Outputs a CSV with exactly three columns: `Medicion,Tiempo,temperatura`.
+## Demo
+
+[![Watch the video](https://img.youtube.com/vi/eOg5OSZ2VnE/0.jpg)](https://www.youtube.com/watch?v=eOg5OSZ2VnE)
 
 ## Features
 - Point-based semi-freehand polygon ROI selection on the first frame.
